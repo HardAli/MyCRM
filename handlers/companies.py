@@ -7,7 +7,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import PAGE_SIZE
 from db import get_session
@@ -106,7 +105,7 @@ async def company_contact(message: Message, state: FSMContext) -> None:
 
 
 @router.message(AddCompanyStates.note)
-async def company_note(message: Message, state: FSMContext, session: AsyncSession = get_session()) -> None:
+async def company_note(message: Message, state: FSMContext) -> None:
     note = None if message.text == "-" else message.text
     data = await state.get_data()
     company = Company(
@@ -119,8 +118,9 @@ async def company_note(message: Message, state: FSMContext, session: AsyncSessio
         contact_person=data.get("contact_person"),
         note=note,
     )
-    session.add(company)
-    await session.commit()
+    async with get_session() as session:
+        session.add(company)
+        await session.commit()
     await state.clear()
     await message.answer(format_company(company), parse_mode=ParseMode.HTML, reply_markup=main_menu())
 
@@ -139,7 +139,7 @@ async def list_companies(message: Message) -> None:
 
 
 @router.callback_query(F.data.startswith("companies:"))
-async def paginate_companies(callback: CallbackQuery, session: AsyncSession = get_session()) -> None:
+async def paginate_companies(callback: CallbackQuery) -> None:
     _, filter_name, page_str = callback.data.split(":")
     page = int(page_str)
     stmt = select(Company)
@@ -150,7 +150,8 @@ async def paginate_companies(callback: CallbackQuery, session: AsyncSession = ge
     elif filter_name == "found":
         stmt = stmt.where(Company.source == CompanySource.FOUND)
     stmt = stmt.order_by(Company.created_at.desc()).offset(page * PAGE_SIZE).limit(PAGE_SIZE)
-    companies = (await session.execute(stmt)).scalars().all()
+    async with get_session() as session:
+        companies = (await session.execute(stmt)).scalars().all()
     rows = []
     for comp in companies:
         rows.append(
@@ -173,13 +174,14 @@ async def paginate_companies(callback: CallbackQuery, session: AsyncSession = ge
 
 
 @router.callback_query(F.data.startswith("company:"))
-async def show_company(callback: CallbackQuery, session: AsyncSession = get_session()) -> None:
+async def show_company(callback: CallbackQuery) -> None:
     company_id = int(callback.data.split(":")[1])
-    company = (await session.execute(select(Company).where(Company.id == company_id))).scalar_one_or_none()
-    if not company:
-        await callback.message.answer("Компания не найдена")
-        await callback.answer()
-        return
+    async with get_session() as session:
+        company = (await session.execute(select(Company).where(Company.id == company_id))).scalar_one_or_none()
+        if not company:
+            await callback.message.answer("Компания не найдена")
+            await callback.answer()
+            return
     await callback.message.answer(
         format_company(company),
         reply_markup=InlineKeyboardMarkup(
@@ -222,42 +224,45 @@ async def change_company_note(callback: CallbackQuery, state: FSMContext) -> Non
 
 
 @router.callback_query(F.data.startswith("comp_status:"))
-async def apply_company_status(callback: CallbackQuery, state: FSMContext, session: AsyncSession = get_session()) -> None:
+async def apply_company_status(callback: CallbackQuery, state: FSMContext) -> None:
     status = CompanyStatus(callback.data.split(":", 1)[1])
     data = await state.get_data()
     if data.get("change_type") != "status":
         await callback.answer()
         return
-    company = (await session.execute(select(Company).where(Company.id == data.get("company_id")))).scalar_one()
-    company.status = status
-    await session.commit()
+    async with get_session() as session:
+        company = (await session.execute(select(Company).where(Company.id == data.get("company_id")))).scalar_one()
+        company.status = status
+        await session.commit()
     await state.clear()
     await callback.message.answer("Статус обновлен")
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("priority:"))
-async def apply_company_priority(callback: CallbackQuery, state: FSMContext, session: AsyncSession = get_session()) -> None:
+async def apply_company_priority(callback: CallbackQuery, state: FSMContext) -> None:
     level = PriorityLevel(callback.data.split(":", 1)[1])
     data = await state.get_data()
     if data.get("change_type") != "priority":
         await callback.answer()
         return
-    company = (await session.execute(select(Company).where(Company.id == data.get("company_id")))).scalar_one()
-    company.priority = level
-    await session.commit()
+    async with get_session() as session:
+        company = (await session.execute(select(Company).where(Company.id == data.get("company_id")))).scalar_one()
+        company.priority = level
+        await session.commit()
     await state.clear()
     await callback.message.answer("Приоритет обновлен")
     await callback.answer()
 
 
 @router.message(AddCompanyStates.note)
-async def apply_company_note(message: Message, state: FSMContext, session: AsyncSession = get_session()) -> None:
+async def apply_company_note(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     if data.get("change_type") != "note":
         return
-    company = (await session.execute(select(Company).where(Company.id == data.get("company_id")))).scalar_one()
-    company.note = message.text
-    await session.commit()
+    async with get_session() as session:
+        company = (await session.execute(select(Company).where(Company.id == data.get("company_id")))).scalar_one()
+        company.note = message.text
+        await session.commit()
     await state.clear()
     await message.answer("Комментарий обновлен")

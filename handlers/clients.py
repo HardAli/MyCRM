@@ -151,7 +151,6 @@ def resolve_next_contact(choice: str) -> datetime | None:
 async def add_client_next_contact(
     callback: CallbackQuery,
     state: FSMContext,
-    session: AsyncSession = get_session(),
 ) -> None:
     choice = callback.data.split(":", 1)[1]
     await state.update_data(next_contact=choice)
@@ -171,16 +170,17 @@ async def add_client_next_contact(
         interest=interest,
         next_contact_at=next_contact_at,
     )
-    try:
-        session.add(client)
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        await callback.message.answer("Клиент с таким телефоном уже существует.")
-        await callback.answer()
-        return
+    async with get_session() as session:
+        try:
+            session.add(client)
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await callback.message.answer("Клиент с таким телефоном уже существует.")
+            await callback.answer()
+            return
 
-    last_interaction = await get_last_interaction(session, client.id)
+        last_interaction = await get_last_interaction(session, client.id)
     await callback.message.answer(
         format_client(client, last_interaction), parse_mode=ParseMode.HTML, reply_markup=main_menu()
     )
@@ -201,7 +201,7 @@ async def list_clients(message: Message) -> None:
 
 
 @router.callback_query(F.data.startswith("clients:"))
-async def paginate_clients(callback: CallbackQuery, session: AsyncSession = get_session()) -> None:
+async def paginate_clients(callback: CallbackQuery) -> None:
     _, filter_name, page_str = callback.data.split(":")
     page = int(page_str)
     stmt = select(Client)
@@ -213,8 +213,9 @@ async def paginate_clients(callback: CallbackQuery, session: AsyncSession = get_
         today = datetime.utcnow().date()
         stmt = stmt.where(func.date(Client.next_contact_at) == today)  # type: ignore[arg-type]
     stmt = stmt.order_by(Client.created_at.desc()).offset(page * PAGE_SIZE).limit(PAGE_SIZE)
-    result = await session.execute(stmt)
-    clients = result.scalars().all()
+    async with get_session() as session:
+        result = await session.execute(stmt)
+        clients = result.scalars().all()
 
     keyboard_rows = []
     for client in clients:
@@ -240,15 +241,16 @@ async def paginate_clients(callback: CallbackQuery, session: AsyncSession = get_
 
 
 @router.callback_query(F.data.startswith("client:"))
-async def show_client(callback: CallbackQuery, session: AsyncSession = get_session()) -> None:
+async def show_client(callback: CallbackQuery) -> None:
     client_id = int(callback.data.split(":")[1])
     stmt = select(Client).where(Client.id == client_id)
-    client = (await session.execute(stmt)).scalar_one_or_none()
-    if not client:
-        await callback.message.answer("Клиент не найден")
-        await callback.answer()
-        return
-    last_interaction = await get_last_interaction(session, client.id)
+    async with get_session() as session:
+        client = (await session.execute(stmt)).scalar_one_or_none()
+        if not client:
+            await callback.message.answer("Клиент не найден")
+            await callback.answer()
+            return
+        last_interaction = await get_last_interaction(session, client.id)
     await callback.message.answer(
         format_client(client, last_interaction),
         reply_markup=InlineKeyboardMarkup(
@@ -289,7 +291,7 @@ async def change_interest(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data.startswith("status:"))
-async def apply_status(callback: CallbackQuery, state: FSMContext, session: AsyncSession = get_session()) -> None:
+async def apply_status(callback: CallbackQuery, state: FSMContext) -> None:
     status = ClientStatus(callback.data.split(":", 1)[1])
     data = await state.get_data()
     client_id = data.get("target_client_id")
@@ -297,17 +299,18 @@ async def apply_status(callback: CallbackQuery, state: FSMContext, session: Asyn
     if change_type != "status" or not client_id:
         await callback.answer()
         return
-    client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
-    client.status = status
-    session.add(client)
-    await session.commit()
+    async with get_session() as session:
+        client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
+        client.status = status
+        session.add(client)
+        await session.commit()
     await state.clear()
     await callback.message.answer("Статус обновлен")
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("interest:"))
-async def apply_interest(callback: CallbackQuery, state: FSMContext, session: AsyncSession = get_session()) -> None:
+async def apply_interest(callback: CallbackQuery, state: FSMContext) -> None:
     interest = InterestLevel(callback.data.split(":", 1)[1])
     data = await state.get_data()
     client_id = data.get("target_client_id")
@@ -315,10 +318,11 @@ async def apply_interest(callback: CallbackQuery, state: FSMContext, session: As
     if change_type != "interest" or not client_id:
         await callback.answer()
         return
-    client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
-    client.interest = interest
-    session.add(client)
-    await session.commit()
+    async with get_session() as session:
+        client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
+        client.interest = interest
+        session.add(client)
+        await session.commit()
     await state.clear()
     await callback.message.answer("Интерес обновлен")
     await callback.answer()
@@ -334,7 +338,7 @@ async def add_comment_prompt(callback: CallbackQuery, state: FSMContext) -> None
 
 
 @router.message(AddClientStates.comment)
-async def save_comment(message: Message, state: FSMContext, session: AsyncSession = get_session()) -> None:
+async def save_comment(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     client_id = data.get("comment_client_id")
     if not client_id:
@@ -350,14 +354,15 @@ async def save_comment(message: Message, state: FSMContext, session: AsyncSessio
         status_after=ClientStatus.NEW,
         comment=comment_text,
     )
-    session.add(interaction)
-    await session.commit()
+    async with get_session() as session:
+        session.add(interaction)
+        await session.commit()
     await message.answer("Комментарий сохранен")
     await state.clear()
 
 
 @router.callback_query(F.data.startswith("history:"))
-async def show_history(callback: CallbackQuery, session: AsyncSession = get_session()) -> None:
+async def show_history(callback: CallbackQuery) -> None:
     client_id = int(callback.data.split(":")[1])
     stmt = (
         select(Interaction)
@@ -365,7 +370,8 @@ async def show_history(callback: CallbackQuery, session: AsyncSession = get_sess
         .order_by(Interaction.created_at.desc())
         .limit(10)
     )
-    interactions = (await session.execute(stmt)).scalars().all()
+    async with get_session() as session:
+        interactions = (await session.execute(stmt)).scalars().all()
     if not interactions:
         await callback.message.answer("История пуста")
         await callback.answer()
@@ -397,7 +403,7 @@ async def call_result(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("callres:"))
 async def apply_call_result(
-    callback: CallbackQuery, state: FSMContext, session: AsyncSession = get_session()
+    callback: CallbackQuery, state: FSMContext
 ) -> None:
     status = ClientStatus(callback.data.split(":", 1)[1])
     data = await state.get_data()
@@ -405,16 +411,17 @@ async def apply_call_result(
     if not client_id:
         await callback.answer()
         return
-    client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
-    client.status = status
-    interaction = Interaction(
-        client_id=client.id,
-        result=InteractionResult.CALL,
-        status_after=status,
-        comment=None,
-    )
-    session.add_all([client, interaction])
-    await session.commit()
+    async with get_session() as session:
+        client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
+        client.status = status
+        interaction = Interaction(
+            client_id=client.id,
+            result=InteractionResult.CALL,
+            status_after=status,
+            comment=None,
+        )
+        session.add_all([client, interaction])
+        await session.commit()
     await state.clear()
     await callback.message.answer(
         "Результат звонка сохранен. Добавить комментарий текстом? Отправьте сообщение, либо '-' чтобы пропустить."
@@ -426,7 +433,7 @@ async def apply_call_result(
 
 @router.callback_query(AddClientStates.next_contact, F.data.startswith("next:"))
 async def handle_next_for_existing(
-    callback: CallbackQuery, state: FSMContext, session: AsyncSession = get_session()
+    callback: CallbackQuery, state: FSMContext
 ) -> None:
     data = await state.get_data()
     client_id = data.get("next_client_id")
@@ -435,9 +442,10 @@ async def handle_next_for_existing(
         return
     choice = callback.data.split(":", 1)[1]
     next_contact = resolve_next_contact(choice)
-    client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
-    client.next_contact_at = next_contact
-    await session.commit()
+    async with get_session() as session:
+        client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one()
+        client.next_contact_at = next_contact
+        await session.commit()
     await callback.message.answer("Дата следующего контакта обновлена")
     await state.clear()
     await callback.answer()
