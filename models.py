@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -49,6 +49,11 @@ class InteractionResult(str, enum.Enum):
     CALL = "call"
     MESSAGE = "message"
     MEETING = "meeting"
+
+
+class SuggestionType(str, enum.Enum):
+    CITY = "city"
+    NICHE = "niche"
 
 
 class Client(Base):
@@ -106,3 +111,12 @@ class Interaction(Base):
     comment: Mapped[str | None] = mapped_column(Text)
 
     client: Mapped[Client] = relationship("Client", back_populates="interactions")
+
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+    __table_args__ = (UniqueConstraint("type", "value", name="uq_suggestion_type_value"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    type: Mapped[SuggestionType] = mapped_column(Enum(SuggestionType), nullable=False)
+    value: Mapped[str] = mapped_column(String(100), nullable=False)

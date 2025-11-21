@@ -181,8 +181,10 @@ async def add_client_next_contact(
             return
 
         last_interaction = await get_last_interaction(session, client.id)
+        message_text = format_client(client, last_interaction)
+
     await callback.message.answer(
-        format_client(client, last_interaction), parse_mode=ParseMode.HTML, reply_markup=main_menu()
+        message_text, parse_mode=ParseMode.HTML, reply_markup=main_menu()
     )
     await callback.answer()
 
@@ -251,8 +253,10 @@ async def show_client(callback: CallbackQuery) -> None:
             await callback.answer()
             return
         last_interaction = await get_last_interaction(session, client.id)
+        message_text = format_client(client, last_interaction)
+
     await callback.message.answer(
-        format_client(client, last_interaction),
+        message_text,
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -263,6 +267,7 @@ async def show_client(callback: CallbackQuery) -> None:
                     InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comment:{client.id}"),
                     InlineKeyboardButton(text="📜 История", callback_data=f"history:{client.id}"),
                 ],
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_client:{client.id}")],
                 [
                     InlineKeyboardButton(text="⏰ Следующий контакт", callback_data=f"setnext:{client.id}"),
                     InlineKeyboardButton(text="📞 Результат звонка", callback_data=f"call:{client.id}"),
@@ -449,3 +454,17 @@ async def handle_next_for_existing(
     await callback.message.answer("Дата следующего контакта обновлена")
     await state.clear()
     await callback.answer()
+
+    @router.callback_query(F.data.startswith("delete_client:"))
+    async def delete_client(callback: CallbackQuery) -> None:
+        client_id = int(callback.data.split(":")[1])
+        async with get_session() as session:
+            client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one_or_none()
+            if not client:
+                await callback.message.answer("Клиент уже удален")
+                await callback.answer()
+                return
+            await session.delete(client)
+            await session.commit()
+        await callback.message.answer("Клиент удален")
+        await callback.answer()

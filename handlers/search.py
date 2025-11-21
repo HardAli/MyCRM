@@ -49,19 +49,67 @@ async def perform_search(message: Message, state: FSMContext) -> None:
             stmt = select(Client).where(Client.phone.like(f"%{text}%"))
             for client in (await session.execute(stmt)).scalars().all():
                 results_buttons.append(
-                    [InlineKeyboardButton(text=client.phone, callback_data=f"client:{client.id}")]
+                    [
+                        InlineKeyboardButton(
+                            text=f"👤 {client.phone}", callback_data=f"client:{client.id}"
+                        )
+                    ]
+                )
+
+                company_stmt = select(Company).where(Company.phone.like(f"%{text}%"))
+                for company in (await session.execute(company_stmt)).scalars().all():
+                    results_buttons.append(
+                        [
+                            InlineKeyboardButton(
+                                text=f"🏢 {company.name}", callback_data=f"company:{company.id}"
+                            )
+                        ]
                 )
         elif mode == "name":
             stmt = select(Client).where(Client.name.ilike(f"%{text}%"))  # type: ignore[arg-type]
             for client in (await session.execute(stmt)).scalars().all():
                 results_buttons.append(
-                    [InlineKeyboardButton(text=client.name or client.phone, callback_data=f"client:{client.id}")]
+                    [
+                        InlineKeyboardButton(
+                            text=f"👤 {client.name or client.phone}",
+                            callback_data=f"client:{client.id}",
+                        )
+                    ]
+                )
+
+                company_stmt = select(Company).where(Company.name.ilike(f"%{text}%"))  # type: ignore[arg-type]
+                for company in (await session.execute(company_stmt)).scalars().all():
+                    results_buttons.append(
+                        [
+                            InlineKeyboardButton(
+                                text=f"🏢 {company.name}", callback_data=f"company:{company.id}"
+                            )
+                        ]
                 )
         elif mode == "company":
             stmt = select(Company).where(Company.name.ilike(f"%{text}%"))  # type: ignore[arg-type]
             for company in (await session.execute(stmt)).scalars().all():
                 results_buttons.append(
-                    [InlineKeyboardButton(text=company.name, callback_data=f"company:{company.id}")]
+                    [
+                        InlineKeyboardButton(
+                            text=f"🏢 {company.name}", callback_data=f"company:{company.id}"
+                        )
+                    ]
+                )
+
+                client_stmt = (
+                    select(Client)
+                    .join(Company)
+                    .where(Company.name.ilike(f"%{text}%"))  # type: ignore[arg-type]
+                )
+                for client in (await session.execute(client_stmt)).scalars().all():
+                    results_buttons.append(
+                        [
+                            InlineKeyboardButton(
+                                text=f"👤 {client.name or client.phone}",
+                                callback_data=f"client:{client.id}",
+                            )
+                        ]
                 )
     await state.clear()
     if not results_buttons:

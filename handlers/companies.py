@@ -11,7 +11,7 @@ from sqlalchemy import select
 from config import PAGE_SIZE
 from db import get_session
 from keyboards import company_source_keyboard, company_status_keyboard, main_menu, priority_keyboard
-from models import Company, CompanySource, CompanyStatus, PriorityLevel
+from models import Company, CompanySource, CompanyStatus, PriorityLevel, Suggestion, SuggestionType
 
 router = Router()
 
@@ -41,6 +41,60 @@ def format_company(company: Company) -> str:
     return "\n".join(lines)
 
 
+def build_suggestions_keyboard(values: list[str], prefix: str) -> InlineKeyboardMarkup | None:
+    if not values:
+        return None
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(values), 2):
+        pair = values[i : i + 2]
+        rows.append(
+            [InlineKeyboardButton(text=value, callback_data=f"{prefix}:{value}") for value in pair]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def get_suggestions(suggestion_type: SuggestionType) -> list[str]:
+    async with get_session() as session:
+        stmt = (
+            select(Suggestion.value)
+            .where(Suggestion.type == suggestion_type)
+            .order_by(Suggestion.value)
+        )
+        return (await session.execute(stmt)).scalars().all()
+
+
+async def remember_suggestion(value: str | None, suggestion_type: SuggestionType) -> None:
+    if not value:
+        return
+    async with get_session() as session:
+        exists_stmt = select(Suggestion).where(
+            Suggestion.type == suggestion_type, Suggestion.value == value
+        )
+        exists = (await session.execute(exists_stmt)).scalar_one_or_none()
+        if exists:
+            return
+        session.add(Suggestion(type=suggestion_type, value=value))
+        await session.commit()
+
+
+async def send_city_prompt(message: Message) -> None:
+    suggestions = await get_suggestions(SuggestionType.CITY)
+    keyboard = build_suggestions_keyboard(suggestions, "city_suggestion")
+    await message.answer(
+        "Город (выберите из предложенных вариантов или отправьте свой):",
+        reply_markup=keyboard,
+    )
+
+
+async def send_niche_prompt(message: Message) -> None:
+    suggestions = await get_suggestions(SuggestionType.NICHE)
+    keyboard = build_suggestions_keyboard(suggestions, "niche_suggestion")
+    await message.answer(
+        "Ниша/сфера (выберите кнопку или отправьте свой вариант):",
+        reply_markup=keyboard,
+    )
+
+
 @router.message(F.text == "🏢 Добавить компанию")
 @router.message(Command("add_company"))
 async def start_add_company(message: Message, state: FSMContext) -> None:
@@ -53,21 +107,44 @@ async def start_add_company(message: Message, state: FSMContext) -> None:
 async def company_name(message: Message, state: FSMContext) -> None:
     await state.update_data(name=message.text)
     await state.set_state(AddCompanyStates.city)
-    await message.answer("Город:")
+    await send_city_prompt(message)
 
 
 @router.message(AddCompanyStates.city)
 async def company_city(message: Message, state: FSMContext) -> None:
-    await state.update_data(city=message.text)
+    city = None if message.text == "-" else message.text
+    await state.update_data(city=city)
+    await remember_suggestion(city, SuggestionType.CITY)
     await state.set_state(AddCompanyStates.niche)
-    await message.answer("Ниша/сфера:")
+    await send_niche_prompt(message)
+
+    @router.callback_query(AddCompanyStates.city, F.data.startswith("city_suggestion:"))
+    async def company_city_suggestion(callback: CallbackQuery, state: FSMContext) -> None:
+        city = callback.data.split(":", 1)[1]
+        await state.update_data(city=city)
+        await remember_suggestion(city, SuggestionType.CITY)
+        await state.set_state(AddCompanyStates.niche)
+        await callback.answer(f"Выбран город: {city}")
+        await send_niche_prompt(callback.message)
 
 
 @router.message(AddCompanyStates.niche)
 async def company_niche(message: Message, state: FSMContext) -> None:
-    await state.update_data(niche=message.text)
+    niche = None if message.text == "-" else message.text
+    await state.update_data(niche=niche)
+    await remember_suggestion(niche, SuggestionType.NICHE)
     await state.set_state(AddCompanyStates.phone)
     await message.answer("Телефон (или '-' если нет):")
+
+
+@router.callback_query(AddCompanyStates.niche, F.data.startswith("niche_suggestion:"))
+async def company_niche_suggestion(callback: CallbackQuery, state: FSMContext) -> None:
+    niche = callback.data.split(":", 1)[1]
+    await state.update_data(niche=niche)
+    await remember_suggestion(niche, SuggestionType.NICHE)
+    await state.set_state(AddCompanyStates.phone)
+    await callback.answer(f"Выбрана ниша: {niche}")
+    await callback.message.answer("Телефон (или '-' если нет):")
 
 
 @router.message(AddCompanyStates.phone)
