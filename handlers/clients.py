@@ -59,8 +59,9 @@ def format_client(client: Client, last_interaction: Interaction | None = None) -
         ClientStatus.AGREED: "Согласился",
         ClientStatus.DECLINED: "Отказался",
     }
+    phone = f"<code>{client.phone}</code>" if client.phone else "—"
     lines = [
-        f"<b>{client.name or 'Без имени'}</b> — {client.phone}",
+        f"<b>{client.name or 'Без имени'}</b> — {phone}",
         f"Статус: {status_map.get(client.status, client.status.value)}",
         f"Интерес: {interest_map.get(client.interest, client.interest.value)}",
         f"Источник: {client.source}",

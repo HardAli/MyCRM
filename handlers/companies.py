@@ -34,10 +34,11 @@ class BulkAddCompaniesStates(StatesGroup):
 
 
 def format_company(company: Company) -> str:
+    phone = f"<code>{company.phone}</code>" if company.phone else "—"
     lines = [
         f"<b>{company.name}</b> ({company.city or 'город не указан'})",
         f"Ниша: {company.niche or '—'}",
-        f"Телефон: {company.phone or '—'}",
+        f"Телефон: {phone}",
         f"Источник: {company.source.value}",
         f"Статус: {company.status.value}",
         f"Приоритет: {company.priority.value}",
