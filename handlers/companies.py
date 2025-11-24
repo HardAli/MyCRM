@@ -48,6 +48,15 @@ def format_company(company: Company) -> str:
     return "\n".join(lines)
 
 
+def build_whatsapp_url(phone: str | None) -> str | None:
+    if not phone:
+        return None
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if not digits:
+        return None
+    return f"https://wa.me/{digits}"
+
+
 def build_suggestions_keyboard(values: list[str], prefix: str) -> InlineKeyboardMarkup | None:
     if not values:
         return None
@@ -367,18 +376,22 @@ async def show_company(callback: CallbackQuery) -> None:
             await callback.message.answer("Компания не найдена")
             await callback.answer()
             return
+    buttons = [
+        [
+            InlineKeyboardButton(text="✏️ Статус", callback_data=f"comp_status_change:{company.id}"),
+            InlineKeyboardButton(text="🔥 Приоритет", callback_data=f"comp_priority:{company.id}"),
+        ],
+        [InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comp_note:{company.id}")],
+        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_company:{company.id}")],
+    ]
+
+    whatsapp_url = build_whatsapp_url(company.phone)
+    if whatsapp_url:
+        buttons.insert(0, [InlineKeyboardButton(text="💬 Открыть WhatsApp", url=whatsapp_url)])
+
     await callback.message.answer(
         format_company(company),
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="✏️ Статус", callback_data=f"comp_status_change:{company.id}"),
-                    InlineKeyboardButton(text="🔥 Приоритет", callback_data=f"comp_priority:{company.id}"),
-                ],
-                [InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comp_note:{company.id}")],
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_company:{company.id}")],
-            ]
-        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode=ParseMode.HTML,
     )
     await callback.answer()

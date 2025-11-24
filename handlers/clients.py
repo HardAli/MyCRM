@@ -45,6 +45,15 @@ def normalize_phone(value: str) -> str:
     return digits
 
 
+def build_whatsapp_url(phone: str | None) -> str | None:
+    if not phone:
+        return None
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if not digits:
+        return None
+    return f"https://wa.me/{digits}"
+
+
 def format_client(client: Client, last_interaction: Interaction | None = None) -> str:
     interest_map = {
         InterestLevel.COLD: "🔵 Холодный",
@@ -256,25 +265,29 @@ async def show_client(callback: CallbackQuery) -> None:
         last_interaction = await get_last_interaction(session, client.id)
         message_text = format_client(client, last_interaction)
 
+    buttons = [
+        [
+            InlineKeyboardButton(text="✏️ Статус", callback_data=f"status_change:{client.id}"),
+            InlineKeyboardButton(text="🔥 Интерес", callback_data=f"interest_change:{client.id}"),
+        ],
+        [
+            InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comment:{client.id}"),
+            InlineKeyboardButton(text="📜 История", callback_data=f"history:{client.id}"),
+        ],
+        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_client:{client.id}")],
+        [
+            InlineKeyboardButton(text="⏰ Следующий контакт", callback_data=f"setnext:{client.id}"),
+            InlineKeyboardButton(text="📞 Результат звонка", callback_data=f"call:{client.id}"),
+        ],
+    ]
+
+    whatsapp_url = build_whatsapp_url(client.phone)
+    if whatsapp_url:
+        buttons.insert(0, [InlineKeyboardButton(text="💬 Открыть WhatsApp", url=whatsapp_url)])
+
     await callback.message.answer(
         message_text,
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="✏️ Статус", callback_data=f"status_change:{client.id}"),
-                    InlineKeyboardButton(text="🔥 Интерес", callback_data=f"interest_change:{client.id}"),
-                ],
-                [
-                    InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comment:{client.id}"),
-                    InlineKeyboardButton(text="📜 История", callback_data=f"history:{client.id}"),
-                ],
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_client:{client.id}")],
-                [
-                    InlineKeyboardButton(text="⏰ Следующий контакт", callback_data=f"setnext:{client.id}"),
-                    InlineKeyboardButton(text="📞 Результат звонка", callback_data=f"call:{client.id}"),
-                ],
-            ]
-        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode=ParseMode.HTML,
     )
     await callback.answer()
