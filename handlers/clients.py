@@ -455,18 +455,19 @@ async def handle_next_for_existing(
     await state.clear()
     await callback.answer()
 
-    @router.callback_query(F.data.startswith("delete_client:"))
-    async def delete_client(callback: CallbackQuery) -> None:
-        client_id = int(callback.data.split(":")[1])
-        async with get_session() as session:
-            client = (
-                await session.execute(select(Client).where(Client.id == client_id))
-            ).scalar_one_or_none()
-            if not client:
-                await callback.message.answer("Клиент уже удален")
-                await callback.answer()
-                return
-            await session.delete(client)
-            await session.commit()
-        await callback.message.answer("Клиент удален")
-        await callback.answer()
+
+@router.callback_query(F.data.startswith("delete_client:"))
+async def delete_client(callback: CallbackQuery) -> None:
+    client_id = int(callback.data.split(":")[1])
+    async with get_session() as session:
+        client = (
+            await session.execute(select(Client).where(Client.id == client_id))
+        ).scalar_one_or_none()
+        if not client:
+            await callback.message.answer("Клиент уже удален")
+            await callback.answer()
+            return
+        await session.delete(client)
+        await session.commit()
+    await callback.message.answer("Клиент удален")
+    await callback.answer()

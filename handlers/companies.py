@@ -27,6 +27,12 @@ class AddCompanyStates(StatesGroup):
     note = State()
 
 
+class BulkAddCompaniesStates(StatesGroup):
+    entries = State()
+    niche = State()
+    city = State()
+
+
 def format_company(company: Company) -> str:
     lines = [
         f"<b>{company.name}</b> ({company.city or 'город не указан'})",
@@ -95,12 +101,113 @@ async def send_niche_prompt(message: Message) -> None:
     )
 
 
+def parse_bulk_companies(text: str) -> list[tuple[str | None, str]]:
+    entries: list[tuple[str | None, str]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if "-" not in line:
+            raise ValueError("Каждая строка должна быть в формате 'телефон-название'")
+        phone_part, name_part = line.split("-", 1)
+        name = name_part.strip()
+        phone = phone_part.strip() or None
+        if not name:
+            raise ValueError("Название компании не может быть пустым")
+        entries.append((phone, name))
+    if not entries:
+        raise ValueError("Список компаний пуст")
+    return entries
+
+
+async def create_bulk_companies(
+    entries: list[tuple[str | None, str]], niche: str | None, city: str | None
+) -> None:
+    companies = [
+        Company(
+            name=name,
+            phone=phone,
+            niche=niche,
+            city=city,
+            source=CompanySource.FOUND,
+            priority=PriorityLevel.LOW,
+            contact_person=None,
+            note=None,
+        )
+        for phone, name in entries
+    ]
+    async with get_session() as session:
+        session.add_all(companies)
+        await session.commit()
+
+
 @router.message(F.text == "🏢 Добавить компанию")
 @router.message(Command("add_company"))
 async def start_add_company(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(AddCompanyStates.name)
     await message.answer("Название компании:")
+
+
+@router.message(F.text == "⚡️ Быстрое добавление компаний")
+@router.message(Command("bulk_companies"))
+async def start_bulk_add(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(BulkAddCompaniesStates.entries)
+    await message.answer(
+        "Отправьте список компаний в формате 'телефон-название', каждая с новой строки:"
+    )
+
+
+@router.message(BulkAddCompaniesStates.entries)
+async def bulk_companies_entries(message: Message, state: FSMContext) -> None:
+    try:
+        entries = parse_bulk_companies(message.text)
+    except ValueError as exc:
+        await message.answer(str(exc))
+        return
+    await state.update_data(entries=entries)
+    await state.set_state(BulkAddCompaniesStates.niche)
+    await send_niche_prompt(message)
+
+
+@router.message(BulkAddCompaniesStates.niche)
+async def bulk_companies_niche(message: Message, state: FSMContext) -> None:
+    niche = None if message.text == "-" else message.text
+    await state.update_data(niche=niche)
+    await remember_suggestion(niche, SuggestionType.NICHE)
+    await state.set_state(BulkAddCompaniesStates.city)
+    await send_city_prompt(message)
+
+
+@router.callback_query(BulkAddCompaniesStates.niche, F.data.startswith("niche_suggestion:"))
+async def bulk_niche_suggestion(callback: CallbackQuery, state: FSMContext) -> None:
+    niche = callback.data.split(":", 1)[1]
+    await state.update_data(niche=niche)
+    await remember_suggestion(niche, SuggestionType.NICHE)
+    await state.set_state(BulkAddCompaniesStates.city)
+    await callback.answer(f"Выбрана ниша: {niche}")
+    await send_city_prompt(callback.message)
+
+
+@router.message(BulkAddCompaniesStates.city)
+async def bulk_companies_city(message: Message, state: FSMContext) -> None:
+    city = None if message.text == "-" else message.text
+    data = await state.get_data()
+    await remember_suggestion(city, SuggestionType.CITY)
+    await create_bulk_companies(data.get("entries", []), niche=data.get("niche"), city=city)
+    await state.clear()
+    await message.answer("Компании добавлены", reply_markup=main_menu())
+
+
+@router.callback_query(BulkAddCompaniesStates.city, F.data.startswith("city_suggestion:"))
+async def bulk_city_suggestion(callback: CallbackQuery, state: FSMContext) -> None:
+    city = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    await remember_suggestion(city, SuggestionType.CITY)
+    await create_bulk_companies(data.get("entries", []), niche=data.get("niche"), city=city)
+    await state.clear()
+    await callback.answer(f"Выбран город: {city}")
+    await callback.message.answer("Компании добавлены", reply_markup=main_menu())
 
 
 @router.message(AddCompanyStates.name)
