@@ -268,6 +268,7 @@ async def show_company(callback: CallbackQuery) -> None:
                     InlineKeyboardButton(text="🔥 Приоритет", callback_data=f"comp_priority:{company.id}"),
                 ],
                 [InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comp_note:{company.id}")],
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_company:{company.id}")],
             ]
         ),
         parse_mode=ParseMode.HTML,
@@ -343,3 +344,20 @@ async def apply_company_note(message: Message, state: FSMContext) -> None:
         await session.commit()
     await state.clear()
     await message.answer("Комментарий обновлен")
+
+
+@router.callback_query(F.data.startswith("delete_company:"))
+async def delete_company(callback: CallbackQuery) -> None:
+    company_id = int(callback.data.split(":")[1])
+    async with get_session() as session:
+        company = (
+            await session.execute(select(Company).where(Company.id == company_id))
+        ).scalar_one_or_none()
+        if not company:
+            await callback.message.answer("Компания уже удалена")
+            await callback.answer()
+            return
+        await session.delete(company)
+        await session.commit()
+    await callback.message.answer("Компания удалена")
+    await callback.answer()

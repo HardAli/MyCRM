@@ -459,7 +459,9 @@ async def handle_next_for_existing(
     async def delete_client(callback: CallbackQuery) -> None:
         client_id = int(callback.data.split(":")[1])
         async with get_session() as session:
-            client = (await session.execute(select(Client).where(Client.id == client_id))).scalar_one_or_none()
+            client = (
+                await session.execute(select(Client).where(Client.id == client_id))
+            ).scalar_one_or_none()
             if not client:
                 await callback.message.answer("Клиент уже удален")
                 await callback.answer()
