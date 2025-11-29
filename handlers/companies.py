@@ -11,6 +11,7 @@ from sqlalchemy import select
 from config import PAGE_SIZE
 from db import get_session
 from keyboards import company_source_keyboard, company_status_keyboard, main_menu, priority_keyboard
+from handlers.filters import build_status_filter_keyboard, get_existing_company_statuses
 from models import Company, CompanySource, CompanyStatus, PriorityLevel, Suggestion, SuggestionType
 
 router = Router()
@@ -321,15 +322,9 @@ async def company_note(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "📂 Компании")
 async def list_companies(message: Message) -> None:
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Все", callback_data="companies:all:0")],
-            [InlineKeyboardButton(text="Не звонили", callback_data="companies:not_called:0")],
-            [InlineKeyboardButton(text="Высокий приоритет", callback_data="companies:high:0")],
-            [InlineKeyboardButton(text="Нашли сами", callback_data="companies:found:0")],
-        ]
-    )
-    await message.answer("Выберите фильтр", reply_markup=keyboard)
+    statuses = await get_existing_company_statuses()
+    keyboard = build_status_filter_keyboard("companies", statuses)
+    await message.answer("Выберите фильтр по статусу", reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("companies:"))
@@ -337,12 +332,9 @@ async def paginate_companies(callback: CallbackQuery) -> None:
     _, filter_name, page_str = callback.data.split(":")
     page = int(page_str)
     stmt = select(Company)
-    if filter_name == "not_called":
-        stmt = stmt.where(Company.status == CompanyStatus.NOT_CALLED)
-    elif filter_name == "high":
-        stmt = stmt.where(Company.priority == PriorityLevel.HIGH)
-    elif filter_name == "found":
-        stmt = stmt.where(Company.source == CompanySource.FOUND)
+    if filter_name.startswith("status-"):
+        status_value = filter_name.split("-", 1)[1]
+        stmt = stmt.where(Company.status == CompanyStatus(status_value))
     stmt = stmt.order_by(Company.created_at.desc()).offset(page * PAGE_SIZE).limit(PAGE_SIZE)
     async with get_session() as session:
         companies = (await session.execute(stmt)).scalars().all()

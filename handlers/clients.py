@@ -8,7 +8,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +22,8 @@ from keyboards import (
     next_contact_keyboard,
     source_keyboard,
 )
-from models import Client, ClientStatus, Interaction, InteractionResult, InterestLevel
+from models import Client, ClientStatus, Company, Interaction, InteractionResult, InterestLevel
+from handlers.filters import build_status_filter_keyboard, get_existing_company_statuses
 
 router = Router()
 
@@ -201,15 +202,9 @@ async def add_client_next_contact(
 
 @router.message(F.text == "📋 Мои клиенты")
 async def list_clients(message: Message) -> None:
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Новые", callback_data="clients:new:0")],
-            [InlineKeyboardButton(text="Горячие", callback_data="clients:hot:0")],
-            [InlineKeyboardButton(text="На сегодня", callback_data="clients:today:0")],
-            [InlineKeyboardButton(text="Все", callback_data="clients:all:0")],
-        ]
-    )
-    await message.answer("Выберите фильтр", reply_markup=keyboard)
+    statuses = await get_existing_company_statuses()
+    keyboard = build_status_filter_keyboard("clients", statuses)
+    await message.answer("Выберите фильтр по статусу компании", reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("clients:"))
@@ -217,13 +212,9 @@ async def paginate_clients(callback: CallbackQuery) -> None:
     _, filter_name, page_str = callback.data.split(":")
     page = int(page_str)
     stmt = select(Client)
-    if filter_name == "new":
-        stmt = stmt.where(Client.status == ClientStatus.NEW)
-    elif filter_name == "hot":
-        stmt = stmt.where(Client.interest == InterestLevel.HOT)
-    elif filter_name == "today":
-        today = datetime.utcnow().date()
-        stmt = stmt.where(func.date(Client.next_contact_at) == today)  # type: ignore[arg-type]
+    if filter_name.startswith("status-"):
+        status_value = filter_name.split("-", 1)[1]
+        stmt = stmt.join(Client.company).where(Company.status == CompanyStatus(status_value))
     stmt = stmt.order_by(Client.created_at.desc()).offset(page * PAGE_SIZE).limit(PAGE_SIZE)
     async with get_session() as session:
         result = await session.execute(stmt)
