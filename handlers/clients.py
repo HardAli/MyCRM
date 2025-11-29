@@ -22,7 +22,7 @@ from keyboards import (
     next_contact_keyboard,
     source_keyboard,
 )
-from models import Client, ClientStatus, Company, Interaction, InteractionResult, InterestLevel
+from models import Client, ClientStatus, Company, Interaction, InteractionResult, InterestLevel, CompanyStatus
 from handlers.filters import build_status_filter_keyboard, get_existing_company_statuses
 
 router = Router()
@@ -233,6 +233,8 @@ async def paginate_clients(callback: CallbackQuery) -> None:
     if nav_row:
         keyboard_rows.append(nav_row)
 
+    keyboard_rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back:main_menu")])
+
     if not keyboard_rows:
         keyboard_rows.append([InlineKeyboardButton(text="Нет данных", callback_data="noop")])
 
@@ -256,21 +258,16 @@ async def show_client(callback: CallbackQuery) -> None:
         last_interaction = await get_last_interaction(session, client.id)
         message_text = format_client(client, last_interaction)
 
-    buttons = [
-        [
-            InlineKeyboardButton(text="✏️ Статус", callback_data=f"status_change:{client.id}"),
-            InlineKeyboardButton(text="🔥 Интерес", callback_data=f"interest_change:{client.id}"),
-        ],
-        [
-            InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comment:{client.id}"),
-            InlineKeyboardButton(text="📜 История", callback_data=f"history:{client.id}"),
-        ],
-        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_client:{client.id}")],
-        [
-            InlineKeyboardButton(text="⏰ Следующий контакт", callback_data=f"setnext:{client.id}"),
-            InlineKeyboardButton(text="📞 Результат звонка", callback_data=f"call:{client.id}"),
-        ],
-    ]
+    buttons = [[
+        InlineKeyboardButton(text="✏️ Статус", callback_data=f"status_change:{client.id}"),
+        InlineKeyboardButton(text="🔥 Интерес", callback_data=f"interest_change:{client.id}"),
+    ], [
+        InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comment:{client.id}"),
+        InlineKeyboardButton(text="📜 История", callback_data=f"history:{client.id}"),
+    ], [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_client:{client.id}")], [
+        InlineKeyboardButton(text="⏰ Следующий контакт", callback_data=f"setnext:{client.id}"),
+        InlineKeyboardButton(text="📞 Результат звонка", callback_data=f"call:{client.id}"),
+    ], [InlineKeyboardButton(text="⬅️ Назад", callback_data="back:main_menu")]]
 
     whatsapp_url = build_whatsapp_url(client.phone)
     if whatsapp_url:

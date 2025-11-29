@@ -37,4 +37,5 @@ def build_status_filter_keyboard(
         )
     if not status_list:
         buttons.append([InlineKeyboardButton(text="Нет данных", callback_data="noop")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back:main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)

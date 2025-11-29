@@ -350,6 +350,7 @@ async def paginate_companies(callback: CallbackQuery) -> None:
         nav.append(InlineKeyboardButton(text="▶️", callback_data=f"companies:{filter_name}:{page+1}"))
     if nav:
         rows.append(nav)
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back:main_menu")])
     if not rows:
         rows.append([InlineKeyboardButton(text="Нет компаний", callback_data="noop")])
 
@@ -380,6 +381,8 @@ async def show_company(callback: CallbackQuery) -> None:
     whatsapp_url = build_whatsapp_url(company.phone)
     if whatsapp_url:
         buttons.insert(0, [InlineKeyboardButton(text="💬 Открыть WhatsApp", url=whatsapp_url)])
+
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back:main_menu")])
 
     await callback.message.answer(
         format_company(company),
