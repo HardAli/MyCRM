@@ -8,7 +8,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -211,13 +211,21 @@ async def list_clients(message: Message) -> None:
 async def paginate_clients(callback: CallbackQuery) -> None:
     _, filter_name, page_str = callback.data.split(":")
     page = int(page_str)
-    stmt = select(Client)
+    filtered_stmt = select(Client)
     if filter_name.startswith("status-"):
         status_value = filter_name.split("-", 1)[1]
-        stmt = stmt.join(Client.company).where(Company.status == CompanyStatus(status_value))
-    stmt = stmt.order_by(Client.created_at.desc()).offset(page * PAGE_SIZE).limit(PAGE_SIZE)
+        filtered_stmt = filtered_stmt.join(Client.company).where(
+            Company.status == CompanyStatus(status_value)
+        )
+        count_stmt = select(func.count()).select_from(filtered_stmt.subquery())
+        paged_stmt = (
+            filtered_stmt.order_by(Client.created_at.desc())
+            .offset(page * PAGE_SIZE)
+            .limit(PAGE_SIZE)
+        )
     async with get_session() as session:
-        result = await session.execute(stmt)
+        total_count = (await session.execute(count_stmt)).scalar_one()
+        result = await session.execute(paged_stmt)
         clients = result.scalars().all()
 
     keyboard_rows = []
@@ -239,7 +247,7 @@ async def paginate_clients(callback: CallbackQuery) -> None:
         keyboard_rows.append([InlineKeyboardButton(text="Нет данных", callback_data="noop")])
 
     await callback.message.edit_text(
-        "Список клиентов:",
+        f"Список клиентов({total_count}):",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
     )
     await callback.answer()
