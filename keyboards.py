@@ -10,7 +10,7 @@ def main_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="➕ Добавить клиента"), KeyboardButton(text="🏢 Добавить компанию")],
             [KeyboardButton(text="📋 Мои клиенты"), KeyboardButton(text="📂 Компании")],
-            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="⚡ Быстрое добавление компаний")],
+            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="⚡️ Быстрое добавление компаний")],
             [KeyboardButton(text="⏰ Задачи на сегодня"), KeyboardButton(text="🔍 Поиск")],
         ],
         resize_keyboard=True,
