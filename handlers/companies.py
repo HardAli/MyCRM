@@ -393,6 +393,7 @@ async def show_company(callback: CallbackQuery) -> None:
             InlineKeyboardButton(text="✏️ Статус", callback_data=f"comp_status_change:{company.id}"),
             InlineKeyboardButton(text="🔥 Приоритет", callback_data=f"comp_priority:{company.id}"),
         ],
+        [InlineKeyboardButton(text="Переговоры", callback_data=f"comp_to_negotiation:{company.id}")],
         [InlineKeyboardButton(text="📝 Комментарий", callback_data=f"comp_note:{company.id}")],
         [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_company:{company.id}")],
     ]
@@ -408,6 +409,23 @@ async def show_company(callback: CallbackQuery) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode=ParseMode.HTML,
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("comp_to_negotiation:"))
+async def set_company_to_negotiation(callback: CallbackQuery) -> None:
+    company_id = int(callback.data.split(":")[1])
+    async with get_session() as session:
+        company = (
+            await session.execute(select(Company).where(Company.id == company_id))
+        ).scalar_one_or_none()
+        if not company:
+            await callback.message.answer("Компания не найдена")
+            await callback.answer()
+            return
+        company.status = CompanyStatus.NEGOTIATION
+        await session.commit()
+    await callback.message.answer("Статус обновлен: Переговоры")
     await callback.answer()
 
 
