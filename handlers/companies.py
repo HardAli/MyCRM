@@ -320,17 +320,7 @@ async def company_note(message: Message, state: FSMContext) -> None:
     await message.answer(format_company(company), parse_mode=ParseMode.HTML, reply_markup=main_menu())
 
 
-@router.message(F.text == "📂 Компании")
-async def list_companies(message: Message) -> None:
-    statuses = await get_existing_company_statuses()
-    keyboard = build_status_filter_keyboard("companies", statuses)
-    await message.answer("Выберите фильтр по статусу", reply_markup=keyboard)
-
-
-@router.callback_query(F.data.startswith("companies:"))
-async def paginate_companies(callback: CallbackQuery) -> None:
-    _, filter_name, page_str = callback.data.split(":")
-    page = int(page_str)
+async def build_companies_page(filter_name: str, page: int) -> tuple[str, InlineKeyboardMarkup]:
     filtered_stmt = select(Company)
     if filter_name.startswith("status-"):
         status_value = filter_name.split("-", 1)[1]
@@ -357,13 +347,35 @@ async def paginate_companies(callback: CallbackQuery) -> None:
     if nav:
         rows.append(nav)
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back:main_menu")])
-    if not rows:
-        rows.append([InlineKeyboardButton(text="Нет компаний", callback_data="noop")])
+    if not companies:
+        rows.insert(0, [InlineKeyboardButton(text="Нет компаний", callback_data="noop")])
 
-    await callback.message.edit_text(
-        f"Компании({total_count}):",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    text = f"Компании({total_count}):"
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.message(F.text == "📂 Компании")
+async def list_companies(message: Message) -> None:
+    statuses = await get_existing_company_statuses()
+    keyboard = build_status_filter_keyboard("companies", statuses)
+    await message.answer("Выберите фильтр по статусу", reply_markup=keyboard)
+
+
+@router.message(F.text == "Не звонили")
+async def list_not_called_companies(message: Message) -> None:
+    text, keyboard = await build_companies_page(
+        f"status-{CompanyStatus.NOT_CALLED.value}", page=0
     )
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("companies:"))
+async def paginate_companies(callback: CallbackQuery) -> None:
+    _, filter_name, page_str = callback.data.split(":")
+    page = int(page_str)
+    text, keyboard = await build_companies_page(filter_name, page)
+
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 

@@ -12,6 +12,7 @@ def main_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📋 Мои клиенты"), KeyboardButton(text="📂 Компании")],
             [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="⚡️ Быстрое добавление компаний")],
             [KeyboardButton(text="⏰ Задачи на сегодня"), KeyboardButton(text="🔍 Поиск")],
+            [KeyboardButton(text="Не звонили")],
         ],
         resize_keyboard=True,
     )
